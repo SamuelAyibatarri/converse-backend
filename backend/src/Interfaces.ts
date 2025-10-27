@@ -1,54 +1,48 @@
-export interface AgentData {
-    readonly id: string;
-    name: string;
-    email: string;
-    passwordHash: string;
-    accountCreationDate: number;
-    lastLogin: number;
-    chatHistory: string[];
+export interface User {
+  readonly id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  role: "agent" | "customer";
+  accountCreationDate: number;
+  lastLogin: number;
 }
 
-export interface CustomerData {
-    readonly id: string;
-    name: string;
-    email: string;
-    passwordHash: string;
-    accountCreationDate: number;
-    lastLogin: number;
-    chatHistory: string[];
+export interface ChatThread {
+  readonly id: string; /// chatDataId
+  createdAt: number;   /// chatTimestamp
 }
 
-export interface Chat {
-    name?: string;
-    readonly timestamp: number;
-    readonly content: string;
-    readonly senderId: string;
-    readonly receiverId: string;
+export interface ChatParticipant {
+  readonly user_id: string;
+  readonly thread_id: string;
 }
 
-export interface ChatData {
-    chatDataId: string;
-    senderId: string;
-    receiverId: string;
-    chatTimestamp: number;
-    chatData: Chat[];
+export interface Message {
+  readonly id: string;
+  readonly thread_id: string;
+  readonly sender_id: string;
+  readonly content: string;
+  readonly timestamp: number;
 }
 
-export interface CAI { /// CAI -> Create Account Interface
-    name: string;
-    email: string;
-    passwordHash: string;
-    usertype: "agent" | "customer";
+/// Interfaces for request payloads 
+
+export interface CAI { /// Create Account Interface
+  name: string;
+  email: string;
+  hashedPassword: string;
+  usertype: "agent" | "customer";
 }
 
-export interface LAI { /// LAI -> Login Account Interface
-    email: string;
-    passwordHash: string;
-    usertype: "agent" | "customer";
+export interface LAI { /// Login Account Interface
+  email: string;
+  hashedPassword: string;
+  usertype: "agent" | "customer";
 }
 
-export interface Database {
-    agents: AgentData[];
-    customers: CustomerData[];
-    chatData: ChatData[];
-}
+/// Legacy aliases retained for compatibility with older code 
+export type AgentData = User;
+export type CustomerData = User;
+export type Chat = Message;
+export type ChatData = ChatThread;
