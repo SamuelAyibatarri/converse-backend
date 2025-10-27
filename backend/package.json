@@ -3,6 +3,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "concurrently \"vite\" \"node src/server.cjs\"",
+		"test": "tsc src/test.ts && mv src/test.js src/test.cjs && node src/test.cjs",
 		"build": "vite build",
 		"preview": "vite build && wrangler pages dev",
 		"deploy": "npm run build && wrangler pages deploy",
@@ -10,16 +11,21 @@
 	},
 	"dependencies": {
 		"@hono/node-server": "^1.19.5",
+		"@node-rs/argon2": "^2.0.2",
 		"cors": "^2.8.5",
 		"dexie": "^4.2.1",
-		"hono": "^4.9.12",
+		"hono": "^4.10.3",
+		"jose": "^6.1.0",
+		"node-fetch": "^3.3.2",
 		"typescript": "^5.9.3",
 		"uuid": "^13.0.0",
 		"ws": "^8.18.3"
 	},
 	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20251014.0",
 		"@hono/vite-build": "^1.2.0",
 		"@hono/vite-dev-server": "^0.18.2",
+		"@types/argon2-browser": "^1.18.4",
 		"@types/node": "^24.8.1",
 		"@types/uuid": "^11.0.0",
 		"@types/ws": "^8.18.1",
