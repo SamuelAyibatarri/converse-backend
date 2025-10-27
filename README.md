@@ -44,7 +44,7 @@ Follow these steps to get the project running on your local machine.
 
 1.  **Clone the Repository**
     ```bash
-    git clone [https://github.com/SamuelAyibatarri/converse-hono-backend.git](https://github.com/SamuelAyibatarri/converse.git)
+    git clone https://github.com/SamuelAyibatarri/converse.git
     cd backend
     ```
 
