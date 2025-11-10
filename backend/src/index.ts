@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import * as argon2 from "@node-rs/argon2";
 import type * as Interfaces from './Interfaces.ts'
 import { SignJWT, jwtVerify } from "jose";
+import { userInfo } from 'os';
 
 type Variables = {
   user: {
@@ -66,7 +67,7 @@ async function generateJWT(userId: string, userType: string, c: AppContext): Pro
   return await new SignJWT({ userId, userType })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("10m") // expires in 30 minutes
+    .setExpirationTime("60m") // expires in 60 minutes
     .sign(key);
 }
 
@@ -113,6 +114,7 @@ async function checkIfUserExists(c: AppContext, email: string): Promise<boolean>
   return !!result
 }
 
+/// Create a user
 async function createUser(c: AppContext, data: Interfaces.CAI) {
   const exists = await checkIfUserExists(c, data.email)
   if (exists) throw new Error('User already exists, try logging in instead')
@@ -132,6 +134,7 @@ async function createUser(c: AppContext, data: Interfaces.CAI) {
   return { id, ...data, accountCreationDate: now, lastLogin: now }
 }
 
+/// Verify thread Id
 async function verifyThreadId(c: AppContext, chatId: string): Promise<boolean> {
   const chatData = await c.env.chat_db
     .prepare('SELECT thread_id FROM chat_participants WHERE thread_id = ?')
@@ -142,7 +145,7 @@ async function verifyThreadId(c: AppContext, chatId: string): Promise<boolean> {
   return true;
 }
 
-
+/// Verify User
 async function verifyUser(
   c: AppContext,
   email: string,
@@ -168,6 +171,61 @@ async function verifyUser(
   return user;
 }
 
+/// Add User to queue
+async function addUserToQueue(
+  c: AppContext,
+  customerId: string,
+  role: 'customer'
+): Promise<{success: boolean; errorMessage?: string}| null> {
+  if (role !== 'customer') throw Error("An agent can't join a queue");
+  const user =   await c.env.chat_db
+    .prepare('SELECT * FROM users WHERE id = ? AND ROLE = ?')
+    .bind(customerId, role)
+    .first();
+
+  if (!user) return {success: false, errorMessage: "User does not exist"}
+  
+  try {
+    await c.env.chat_db
+      .prepare('INSERT INTO queue (customer_id) VALUES(?)')
+      .bind(customerId)
+      .run();
+
+    return {success: true}
+  } catch (error: any) {
+      if (error.message.includes('UNIQUE constraint failed')) {
+            return { success: false, errorMessage: 'User is already in the queue' };
+          }
+    return ({success: false, errorMessage: "An unknown error occured"});
+  }
+}
+
+/// Remove a user from queue
+async function removeUserFromQueue(
+  c: AppContext,
+  customerId: string,
+  role: 'customer'
+): Promise<{success: boolean; errorMessage?: string}| null> {
+  if (role !== 'customer') throw Error("An agent can't leave or join a queue");
+  const user =   await c.env.chat_db
+    .prepare('SELECT * FROM users WHERE id = ? AND ROLE = ?')
+    .bind(customerId, role)
+    .first();
+
+  if (!user) return {success: false, errorMessage: "User does not exist"}
+  
+  try {
+    await c.env.chat_db
+      .prepare('DELETE FROM queue WHERE customer_id = ?')
+      .bind(customerId)
+      .run();
+
+    return {success: true}
+  } catch (error: any) {
+    return ({success: false, errorMessage: "An unknown error occured"});
+  }
+}
+
 /// Verify the number of participants
 async function verifyParticipants(c: AppContext, senderId: string, receiverId: string, chatId: string): Promise<boolean> {
     const chatData = await c.env.chat_db
@@ -185,7 +243,7 @@ async function verifyParticipants(c: AppContext, senderId: string, receiverId: s
   return false
 }
 
-
+/// Verify user id
 async function verifyUserId(c: AppContext, userId: string): Promise<boolean> {
   const result = await c.env.chat_db
     .prepare('SELECT 1 FROM users WHERE id = ? LIMIT 1')
@@ -194,6 +252,7 @@ async function verifyUserId(c: AppContext, userId: string): Promise<boolean> {
   return !!result
 }
 
+/// Create chat
 async function createChat(
   c: AppContext,
   senderId: string,
@@ -203,7 +262,7 @@ async function createChat(
   const now = Date.now()
 
   await c.env.chat_db
-    .prepare('INSERT INTO chat_threads (id, createdAt) VALUES (?, ?)')
+    .prepare('INSERT INTO chat_threads (id, createdAt, resolved_status) VALUES (?, ?, 0)')
     .bind(threadId, now)
     .run()
 
@@ -215,6 +274,24 @@ async function createChat(
   return threadId
 }
 
+/// Resolve a chat
+async function resolveChat(c: AppContext, threadId: string ): Promise<{success: boolean; errorMessage?: string; details?:Error;}> {
+  try {
+    await c.env.chat_db
+    .prepare('UPDATE chat_threads SET resolved_status = 1 WHERE id = ?')
+    .bind(threadId)
+    .run();
+    
+    return {success: true};
+  } catch (error) {
+    if (error instanceof Error) {
+      return ({success: false, errorMessage: error.message, details: error});
+    }
+    return ({success: false, errorMessage: "An unknown error occured"});
+  }
+} 
+
+/// Send a message
 async function sendMessage(
   c: AppContext,
   threadId: string,
@@ -408,5 +485,65 @@ app.post('/api/chatData/:threadId', async (c) => {
     return c.json({ error: 'Failed to load chat data', details: message }, 500)
   }
 })
+
+/// Join queue
+app.post('/api/joinqueue', async (c) => {
+  const formData: {customerId: string; role: 'customer' } = await c.req.json();
+      // @ts-ignore
+  const jwtData: { userId: string; userType: string } = c.get<{ userId: string; userType: string }>('user');
+  if (jwtData.userId !== formData.customerId || jwtData.userType !== formData.role) return c.json({error: "Forbidden"}, 403);
+  try {
+    const addedUser = await addUserToQueue(c, formData.customerId, formData.role)
+    if (addedUser?.success) return c.json({message: "You've been successfully added to the queue"}, 201);
+    if (!addedUser?.success) throw new Error("Couldn't add you to the queue");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return c.json({ error: 'Failed to send message', details: message }, 500)
+  }
+});
+
+/// Join queue
+app.post('/api/leavequeue', async (c) => {
+  const formData: {customerId: string; role: 'customer' } = await c.req.json();
+      // @ts-ignore
+  const jwtData: { userId: string; userType: string } = c.get<{ userId: string; userType: string }>('user');
+  if (jwtData.userId !== formData.customerId || jwtData.userType !== formData.role) return c.json({error: "Forbidden"}, 403);
+  try {
+    const removedUser = await removeUserFromQueue(c, formData.customerId, formData.role)
+    if (removedUser?.success) return c.json({message: "You've been successfully removed from the queue"}, 201);
+    if (!removedUser?.success) throw new Error("Couldn't remove you from the queue");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return c.json({ error: 'Failed to leave queue', details: message }, 500)
+  }
+});
+
+/// Resolve a chat
+app.post('/api/resolvechat', async (c) => {
+  const { customerId, role, threadId } = await c.req.json();
+  // @ts-ignore
+  const jwtData = c.get<{ userId: string; userType: string }>('user');
+  // @ts-ignore
+  if (jwtData.userId !== customerId || jwtData.userType !== role)
+    return c.json({ error: 'Forbidden' }, 403);
+
+  try {
+    const resolvedChat = await resolveChat(c, threadId);
+
+    if (resolvedChat.success) {
+      return c.json({ success: true, message: 'Chat resolved' }, 201);
+    }
+
+    return c.json(
+      { success: false, error: resolvedChat.errorMessage },
+      400
+    );
+
+  } catch (error) {
+    return c.json({ error: 'Internal error', details: error }, 500);
+  }
+});
+
+
 
 export default app
