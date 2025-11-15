@@ -9,8 +9,8 @@ export interface User {
 }
 
 export interface ChatThread {
-  readonly id: string; /// chatDataId
-  createdAt: number;   /// chatTimestamp
+  readonly id: string; // chatDataId
+  createdAt: number;   // chatTimestamp
 }
 
 export interface ChatParticipant {
@@ -26,22 +26,20 @@ export interface Message {
   readonly timestamp: number;
 }
 
-/// Interfaces for request payloads 
 
 export interface CAI { /// Create Account Interface
   name: string;
   email: string;
   hashedPassword: string;
-  usertype: "agent" | "customer";
+  role: "agent" | "customer";
 }
 
 export interface LAI { /// Login Account Interface
   email: string;
   hashedPassword: string;
-  usertype: "agent" | "customer";
+  role: "agent" | "customer";
 }
 
-/// Legacy aliases retained for compatibility with older code 
 export type AgentData = User;
 export type CustomerData = User;
 export type Chat = Message;
