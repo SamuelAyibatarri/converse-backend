@@ -78,7 +78,7 @@ You must create a local D1 database and apply the schema.
     echo "JWT_SECRET=$(openssl rand -hex 32)" > .dev.vars
     ```
 
-    If this doesn't work (It didn't work for me and I was too lazy to find out why) then a simpler alternative would be to add `	"vars": {
+    If this doesn't work, then a simpler alternative would be to add `	"vars": {
 		"JWT_SECRET": "your-super-sexy-secret-key"
 	}, ` to your `wrangler.jsonc` file.
 
@@ -91,7 +91,7 @@ npm run dev
 ```
 
 
-# Converse Hono Frontend ( ReactJS, Typescript and Shadcn ) -> Coming Soon... 
+# Converse Hono Frontend ( ReactJS, Typescript and Shadcn ) -> In active development. 
 
 <img width="1366" height="658" alt="image" src="https://github.com/user-attachments/assets/cfc4c705-fcc5-4369-b6ff-370e68f0c9fb" />
 
