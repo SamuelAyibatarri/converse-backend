@@ -1,4 +1,4 @@
-import { CheckCircle, InfoIcon, X } from "lucide-react"
+import { CheckCircle, InfoIcon} from "lucide-react"
 import { useEffect, useState } from 'react'
 
 import {
@@ -29,7 +29,7 @@ interface ComponentProps {
 
 export function PasswordInput({passwordInput, passwordValid, setPassword}: ComponentProps) {
     const [isPasswordValid, setValidPasswordBool] = useState<boolean>(false);
-    const [validPassword, setValidPassword] = useState<string>("");
+    // const [validPassword, setValidPassword] = useState<string>("");
     const [validityMatrix, setValidityMatrix] = useState<ValidityMatrix>(
       {
         hasUppercase: false,
@@ -39,39 +39,35 @@ export function PasswordInput({passwordInput, passwordValid, setPassword}: Compo
         minLength: false
       }
     )
-    const validMatrix: ValidityMatrix = { 
+
+    useEffect(() => {
+      function validatePassword(): void {
+        const hUC = /[A-Z]/.test(passwordInput);
+        const hLC = /[a-z]/.test(passwordInput);
+        const hN = /\d/.test(passwordInput);
+        const hS = /[!@#$%^&*(),.?":{}|<>]/.test(passwordInput);
+        const mL = passwordInput.length >= 8;
+
+        setValidityMatrix( {
+          hasUppercase: hUC, 
+          hasLowercase: hLC, 
+          hasNumber: hN,
+          hasSpecial: hS,
+          minLength: mL 
+      })
+    }
+      validatePassword();
+    }, [passwordInput])
+
+
+    useEffect(() => {
+      const validMatrix: ValidityMatrix = { 
         hasUppercase: true, 
         hasLowercase: true, 
         hasNumber: true, 
         hasSpecial: true, 
         minLength:true
        };
-
-    function validatePassword(): void {
-      const hUC = /[A-Z]/.test(passwordInput);
-      const hLC = /[a-z]/.test(passwordInput);
-      const hN = /\d/.test(passwordInput);
-      const hS = /[!@#$%^&*(),.?":{}|<>]/.test(passwordInput);
-      const mL = passwordInput.length >= 8;
-
-      setValidityMatrix( {
-        hasUppercase: hUC, 
-        hasLowercase: hLC, 
-        hasNumber: hN,
-        hasSpecial: hS,
-        minLength: mL 
-      })
-    }
-
-    useEffect(() => {
-      validatePassword();
-    }, [passwordInput])
-
-
-    useEffect(() => {
-      console.log(validityMatrix);
-      console.log(JSON.stringify(validityMatrix) === JSON.stringify(validMatrix));
-      console.log(validMatrix);
       if (JSON.stringify(validityMatrix) === JSON.stringify(validMatrix)) {
         setValidPasswordBool(true);
         passwordValid(true);
@@ -79,7 +75,7 @@ export function PasswordInput({passwordInput, passwordValid, setPassword}: Compo
         setValidPasswordBool(false);
         passwordValid(false)
       }
-    }, [validityMatrix, validMatrix])
+    }, [validityMatrix, passwordValid])
 
   return (
     <div className="grid w-full max-w-sm gap-4">

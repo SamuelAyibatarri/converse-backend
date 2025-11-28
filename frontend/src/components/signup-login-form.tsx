@@ -14,10 +14,10 @@ import {
   FieldSeparator,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { signup, login } from "@/auth"
+import { signup, login} from "@/auth"
 import { toast } from "sonner"
 import { Toaster } from "@/components/ui/sonner"
-import { useNavigate } from "react-router-dom";
+// import { useNavigate } from "react-router-dom";
 
 type UserRoleType = "agent" | "customer";
 
@@ -32,24 +32,36 @@ export function SignUp_Login_Form({
   const [nameInput, setNameInput] = useState<string>("");
   const [usertype, setUserType] = useState<UserRoleType>("agent");
 
-  const navigate = useNavigate();
+  /// const navigate = useNavigate();
 
   const loginUserForm: Interfaces.LAI = {
     email: emailInput,
-    passwordHash: passwordInput,
-    usertype: usertype
+    hashedPassword: passwordInput,
+    role: usertype
   }
  
   const signupUserForm: Interfaces.CAI = {
     name: nameInput,
     email: emailInput,
-    passwordHash: passwordInput,
-    usertype: usertype
+    hashedPassword: passwordInput,
+    role: usertype
   }
 
-  function handleLoginClick() {
-    console.log("Trying to log in");
-    login(loginUserForm);
+  const handleLoginClick = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const formData = loginUserForm;
+    
+    try {
+      const data = await login(formData as Interfaces.LAI);
+      toast.success(`Welcome back, ${data.userData.name}`);
+      window.location.reload();
+    } catch (error) {
+      if (error instanceof Error) {
+        toast.error(error.message);
+      } else {
+        toast.error("An unknown error occured try logging in again")
+      }
+    }
   }
 
   const handleSignupClick = async (e: React.FormEvent) => {
@@ -57,14 +69,13 @@ export function SignUp_Login_Form({
     const formData = signupUserForm;
 
     try {
-      const user = await signup(formData as Interfaces.CAI);
-      toast.success(`Welcome, ${user.name}`)
+      const data = await signup(formData as Interfaces.CAI);
+      toast.success(`Welcome, ${data.userData.name}`)
       window.location.reload();
 
     } catch (error) {
       if (error instanceof Error) {
         toast.error(error.message);
-        // alert(error.message)
       } else {
         toast.error("An unknown error occurred.");
       }
@@ -124,9 +135,20 @@ export function SignUp_Login_Form({
             />
             <FieldLabel htmlFor="password">Password</FieldLabel>
             <PasswordInput passwordInput={passwordInput} passwordValid={setValidPasswordBool} setPassword={setPasswordInput}/>
+            <FieldLabel htmlFor="role">Role</FieldLabel>
+             <RadioGroup defaultValue={usertype} onValueChange={(newValue) => { setUserType(newValue as UserRoleType)}} className="flex flex-row w-full justify-between">
+                <div className="flex items-center space-x-2 border rounded-lg h-10 w-auto p-3">
+                  <RadioGroupItem value="agent" id="agent" />
+                  <Label htmlFor="agent" className="">Agent</Label>
+                </div>
+                <div className="flex items-center space-x-2 justify-around border p-3 rounded-lg">
+                  <RadioGroupItem value="customer" id="customer" />
+                  <Label htmlFor="agent">Customer</Label>
+                </div>
+              </RadioGroup>
           </Field>
           <Field>
-            <Button onClick={handleLoginClick} disabled={!isPasswordValid || (nameInput.length === 0)}>Login</Button>
+            <Button onClick={handleLoginClick} disabled={!isPasswordValid}>Login</Button>
           </Field>
           <FieldSeparator>Or</FieldSeparator>
           <Field className="grid gap-4 sm:grid-cols-2">
@@ -196,8 +218,6 @@ export function SignUp_Login_Form({
               onChange={(event) => { setNameInput(event.target.value) }}
               required = {true}
               />
-          </Field>
-          <Field>
             <FieldLabel htmlFor="role">Role</FieldLabel>
              <RadioGroup defaultValue={usertype} onValueChange={(newValue) => { setUserType(newValue as UserRoleType)}} className="flex flex-row w-full justify-between">
                 <div className="flex items-center space-x-2 border rounded-lg h-10 w-auto p-3">

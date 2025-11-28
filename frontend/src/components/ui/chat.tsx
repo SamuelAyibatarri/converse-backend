@@ -1,7 +1,9 @@
 import * as React from "react"
+import { AlertCircleIcon, BadgeCheckIcon, CheckIcon } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
-interface ChatListProps extends React.HTMLAttributes<HTMLDivElement> {}
+type ChatListProps = React.HTMLAttributes<HTMLDivElement>
 
 const ChatList = React.forwardRef<HTMLDivElement, ChatListProps>(({ className, children, ...props }, ref) => {
   return (
@@ -34,7 +36,7 @@ const ChatBubble = React.forwardRef<HTMLDivElement, ChatBubbleProps>(
 )
 ChatBubble.displayName = "ChatBubble"
 
-interface ChatBubbleAvatarProps extends React.HTMLAttributes<HTMLDivElement> {}
+type ChatBubbleAvatarProps = React.HTMLAttributes<HTMLDivElement>
 
 const ChatBubbleAvatar = React.forwardRef<HTMLDivElement, ChatBubbleAvatarProps>(
   ({ className, children, ...props }, ref) => {
@@ -47,7 +49,7 @@ const ChatBubbleAvatar = React.forwardRef<HTMLDivElement, ChatBubbleAvatarProps>
 )
 ChatBubbleAvatar.displayName = "ChatBubbleAvatar"
 
-interface ChatBubbleAvatarImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {}
+type ChatBubbleAvatarImageProps = React.ImgHTMLAttributes<HTMLImageElement>
 
 const ChatBubbleAvatarImage = React.forwardRef<HTMLImageElement, ChatBubbleAvatarImageProps>(
   ({ className, ...props }, ref) => {
@@ -56,7 +58,7 @@ const ChatBubbleAvatarImage = React.forwardRef<HTMLImageElement, ChatBubbleAvata
 )
 ChatBubbleAvatarImage.displayName = "ChatBubbleAvatarImage"
 
-interface ChatBubbleAvatarFallbackProps extends React.HTMLAttributes<HTMLDivElement> {}
+type ChatBubbleAvatarFallbackProps = React.HTMLAttributes<HTMLDivElement>
 
 const ChatBubbleAvatarFallback = React.forwardRef<HTMLDivElement, ChatBubbleAvatarFallbackProps>(
   ({ className, children, ...props }, ref) => {
@@ -86,9 +88,9 @@ const ChatBubbleMessage = React.forwardRef<HTMLDivElement, ChatBubbleMessageProp
       <div
         ref={ref}
         className={cn(
-          "rounded-lg px-4 py-2",
-          'group-data-[variant="sent"]/chat-bubble:bg-primary group-data-[variant="sent"]/chat-bubble:text-primary-foreground',
-          'group-data-[variant="received"]/chat-bubble:bg-muted',
+          "rounded-lg px-4 py-3",
+          'group-data-[variant="sent"]/chat-bubble:bg-black group-data-[variant="sent"]/chat-bubble:text-primary-foreground',
+          'group-data-[variant="received"]/chat-bubble:bg-white',
           className,
         )}
         {...props}
@@ -108,4 +110,18 @@ const ChatBubbleMessage = React.forwardRef<HTMLDivElement, ChatBubbleMessageProp
 )
 ChatBubbleMessage.displayName = "ChatBubbleMessage"
 
-export { ChatList, ChatBubble, ChatBubbleAvatar, ChatBubbleAvatarImage, ChatBubbleAvatarFallback, ChatBubbleMessage }
+
+function ChatBadge() {
+  return (
+    <div className="flex flex-col items-center gap-2 justify-center">
+        <Badge
+          className="h-5 min-w-5 rounded-2xl px-1 tabular-nums bg-white p-4"
+          variant="outline">
+          Today
+        </Badge>
+    </div>
+  )
+}
+
+
+export { ChatList, ChatBubble, ChatBubbleAvatar, ChatBubbleAvatarImage, ChatBubbleAvatarFallback, ChatBubbleMessage, ChatBadge }
