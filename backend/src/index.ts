@@ -28,11 +28,17 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 app.use(
   '/api/*',
   cors({
-    origin: ['http://localhost:5173', 'null'],
+    origin: ['http://localhost:5173'],
     allowMethods: ['POST', 'GET'],
     allowHeaders: ['Content-Type', 'Authorization'],
   })
 )
+
+app.use('/chatData/*', cors({
+  origin: 'http://localhost:5173',
+  allowMethods: ['GET', 'POST'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+}));
 
 app.use("/api/*", async (c, next) => {
   console.log("This jwt middleware gets triggerd")
@@ -42,7 +48,7 @@ app.use("/api/*", async (c, next) => {
 
   const isWebSocketUpgrade = path.startsWith('/api/chat/') && path.endsWith('/ws');
 
-  if (path === "/api/auth/signup" || path === "/api/auth/login" || isWebSocketUpgrade || path.startsWith("/api/chatData/") || path.startsWith("/api/history/") || path.startsWith('/api/freeagentlist') || path.startsWith('/api/agent/')) { /// DON'T FORGET, MAKE /api/chatData a post request not a get, I just did this for testing, ALSO the HISTORY ENDPOINT
+  if (path === "/api/auth/signup" || path === "/api/auth/login" || isWebSocketUpgrade || path.startsWith("/api/chatData/") || path.startsWith("/api/history/") || path.startsWith('/api/freeagentlist') || path.startsWith('/api/agent/') || path.startsWith('/api/getagentspecificqueue/')) { /// DON'T FORGET, MAKE /api/chatData a post request not a get, I just did this for testing, ALSO the HISTORY ENDPOINT
     await next();
     return;
   }
@@ -55,8 +61,8 @@ app.use("/api/*", async (c, next) => {
   try {
     const token = authHeader.split(" ")[1];
     const payload = await verifyJWT(token, c);
-    if (!payload || payload === null) return c.json({ error: "Invalid or expired token"}, 401);
-    c.set('user', payload as {userId: string; userType: string;});
+    if (!payload || payload === null) return c.json({ error: "Invalid or expired token" }, 401);
+    c.set('user', payload as { userId: string; userType: string; });
     await next();
   } catch {
     return c.json({ error: "Invalid or expired token" }, 401);
@@ -67,7 +73,7 @@ app.use("/api/*", async (c, next) => {
 /// ::::::::::::::::::: Helper Functions :::::::::::::::::::::
 
 async function generateJWT(userId: string, userType: string, c: AppContext): Promise<string> {
-    const key = await crypto.subtle.importKey(
+  const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(c.env.JWT_SECRET), // convert string → Uint8Array
     { name: "HMAC", hash: "SHA-256" },
@@ -84,7 +90,7 @@ async function generateJWT(userId: string, userType: string, c: AppContext): Pro
 async function verifyJWT(
   token: string,
   c: AppContext
-): Promise<{ userId: string; userType: string } | null> {
+): Promise<{ userId: string; userType: string } | null | undefined> {
   try {
     const key = await crypto.subtle.importKey(
       "raw",
@@ -95,10 +101,10 @@ async function verifyJWT(
     );
 
     const { payload } = await jwtVerify(token, key);
+    console.log("This is the payload from JWT: ", payload)
     return payload as { userId: string; userType: string };
   } catch (err) {
     console.warn("Invalid or expired token:", err);
-    return null; // explicitly return null for fake/invalid tokens
   }
 }
 
@@ -117,7 +123,7 @@ async function verifyJWT(
 // }
 
 async function hashPassword(password: string): Promise<string> {
-  const saltRounds = 10; 
+  const saltRounds = 10;
   return await bcrypt.hash(password, saltRounds);
 }
 
@@ -200,28 +206,31 @@ async function addUserToQueue(
   c: AppContext,
   customerId: string,
   role: 'customer',
-  threadId: string
-): Promise<{success: boolean; errorMessage?: string}> {
+  threadId: string,
+  assignedAgent: string,
+  name: string
+): Promise<{ success: boolean; errorMessage?: string }> {
   if (role !== 'customer') throw Error("An agent can't join a queue");
-  const user =   await c.env.chat_db
-    .prepare('SELECT * FROM users WHERE id = ? AND ROLE = ?')
-    .bind(customerId, role)
+  const user = await c.env.chat_db
+    .prepare('SELECT * FROM users WHERE id = ? AND ROLE = ? AND name = ?')
+    .bind(customerId, role, name)
     .first();
 
-  if (!user) return {success: false, errorMessage: "User does not exist"}
-  
+  if (!user) return { success: false, errorMessage: "User does not exist" }
+
   try {
+    const currentTime = Date.now();
     await c.env.chat_db
-      .prepare('INSERT INTO queue (customer_id, thread_id) VALUES(?, ?)')
-      .bind(customerId, threadId)
+      .prepare('INSERT INTO queue (customer_id, thread_id, assigned_agent, wait_time, customer_name) VALUES(?, ?, ?, ?, ?)')
+      .bind(customerId, threadId, assignedAgent, currentTime, name)
       .run();
 
-    return {success: true}
+    return { success: true }
   } catch (error: any) {
     if (error?.cause?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return { success: false, errorMessage: 'User is already in the queue' };
     }
-    
+
     console.error('Failed to add user to queue:', error);
     return { success: false, errorMessage: 'An unknown error occurred' };
   }
@@ -232,24 +241,52 @@ async function removeUserFromQueue(
   c: AppContext,
   customerId: string,
   role: 'customer'
-): Promise<{success: boolean; errorMessage?: string}| null> {
+): Promise<{ success: boolean; errorMessage?: string } | null> {
   if (role !== 'customer') throw Error("An agent can't leave or join a queue");
-  const user =   await c.env.chat_db
-    .prepare('SELECT * FROM users WHERE id = ? AND ROLE = ?')
+  const user = await c.env.chat_db
+    .prepare('SELECT * FROM users WHERE id = ? AND role = ?')
     .bind(customerId, role)
     .first();
 
-  if (!user) return {success: false, errorMessage: "User does not exist"}
-  
+  if (!user) return { success: false, errorMessage: "User does not exist" }
+
   try {
     await c.env.chat_db
       .prepare('DELETE FROM queue WHERE customer_id = ?')
       .bind(customerId)
       .run();
 
-    return {success: true}
+    return { success: true }
   } catch (error: any) {
-    return ({success: false, errorMessage: "An unknown error occured"});
+    return ({ success: false, errorMessage: "An unknown error occured" });
+  }
+}
+
+/// Get user queue for a specific agent
+async function getUserQueueForAgent(
+  c: AppContext,
+  agentId: string
+): Promise<{ success: boolean; data?: object[]; errorMessage?: string }> {
+  console.log("User verification hasn't ran")
+  const user = await c.env.chat_db
+    .prepare('SELECT * FROM users WHERE id = ? AND role = ?')
+    .bind(agentId, 'agent')
+    .first();
+
+  console.log("user verification runs")
+  if (!user) return { success: false, errorMessage: "User does not exist" }
+
+  try {
+    const queueData = await c.env.chat_db
+      .prepare('SELECT * FROM queue WHERE assigned_agent = ?')
+      .bind(agentId)
+      .all()
+    console.log("This is the queue data sent: ", queueData.results);
+    if (!queueData.success) return { success: false, errorMessage: queueData.error }
+    return { success: true, data: queueData.results };
+  } catch (error) {
+    if (error instanceof Error) return { success: false, errorMessage: error.message };
+    return { success: false, errorMessage: "An unknown error occured" }
   }
 }
 
@@ -258,27 +295,27 @@ async function addAgentToQueue(
   c: AppContext,
   agentId: string,
   role: 'agent',
-): Promise<{success: boolean; errorMessage?: string}> {
+): Promise<{ success: boolean; errorMessage?: string }> {
   if (role !== 'agent') throw Error("A customer can't join a queue");
-  const user =   await c.env.chat_db
+  const user = await c.env.chat_db
     .prepare('SELECT * FROM users WHERE id = ? AND ROLE = ?')
     .bind(agentId, role)
     .first();
 
-  if (!user) return {success: false, errorMessage: "User does not exist"}
-  
+  if (!user) return { success: false, errorMessage: "User does not exist" }
+
   try {
     await c.env.chat_db
       .prepare('INSERT INTO free_agents (agent_id) VALUES(?)')
       .bind(agentId)
       .run();
 
-    return {success: true}
+    return { success: true }
   } catch (error: any) {
     if (error?.cause?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return { success: false, errorMessage: 'Agent is already in the list' };
     }
-    
+
     console.error('Failed to add agent to the list:', error);
     return { success: false, errorMessage: 'An unknown error occurred' };
   }
@@ -289,36 +326,36 @@ async function removeAgentFromQueue(
   c: AppContext,
   agentId: string,
   role: 'agent'
-): Promise<{success: boolean; errorMessage?: string}| null> {
+): Promise<{ success: boolean; errorMessage?: string } | null> {
   if (role !== 'agent') throw Error("An agent can't leave or join a queue");
-  const user =   await c.env.chat_db
+  const user = await c.env.chat_db
     .prepare('SELECT * FROM users WHERE id = ? AND ROLE = ?')
     .bind(agentId, role)
     .first();
 
-  if (!user) return {success: false, errorMessage: "User does not exist"}
-  
+  if (!user) return { success: false, errorMessage: "User does not exist" }
+
   try {
     await c.env.chat_db
       .prepare('DELETE FROM free_agents WHERE agent_id = ?')
       .bind(agentId)
       .run();
 
-    return {success: true}
+    return { success: true }
   } catch (error: any) {
-    return ({success: false, errorMessage: "An unknown error occured"});
+    return ({ success: false, errorMessage: "An unknown error occured" });
   }
 }
 
 /// Verify the number of participants
 async function verifyParticipants(c: AppContext, senderId: string, receiverId: string, chatId: string): Promise<boolean> {
-    const chatData = await c.env.chat_db
+  const chatData = await c.env.chat_db
     .prepare('SELECT user_id FROM chat_participants WHERE thread_id = ?')
     .bind(chatId)
     .all();
 
   if (chatData.success) {
-    const userIdsArray = chatData.results; 
+    const userIdsArray = chatData.results;
     const senderIdVerified: boolean = userIdsArray.filter(x => x.user_id === senderId).length === 1;
     const receiverIdVerified: boolean = userIdsArray.filter(x => x.user_id === receiverId).length === 1;
 
@@ -359,21 +396,21 @@ async function createChat(
 }
 
 /// Resolve a chat
-async function resolveChat(c: AppContext, threadId: string ): Promise<{success: boolean; errorMessage?: string; details?:Error;}> {
+async function resolveChat(c: AppContext, threadId: string): Promise<{ success: boolean; errorMessage?: string; details?: Error; }> {
   try {
     await c.env.chat_db
-    .prepare('UPDATE chat_threads SET resolved_status = 1 WHERE id = ?')
-    .bind(threadId)
-    .run();
-    
-    return {success: true};
+      .prepare('UPDATE chat_threads SET resolved_status = 1 WHERE id = ?')
+      .bind(threadId)
+      .run();
+
+    return { success: true };
   } catch (error) {
     if (error instanceof Error) {
-      return ({success: false, errorMessage: error.message, details: error});
+      return ({ success: false, errorMessage: error.message, details: error });
     }
-    return ({success: false, errorMessage: "An unknown error occured"});
+    return ({ success: false, errorMessage: "An unknown error occured" });
   }
-} 
+}
 
 /// Send a message
 async function sendMessage(
@@ -415,15 +452,15 @@ async function loadHistory(
 ): Promise<string[]> {
   try {
     const result = await c.env.chat_db
-    .prepare('SELECT * FROM chat_participants WHERE user_id = ?')
-    .bind(userId)
-    .all<string>();
+      .prepare('SELECT * FROM chat_participants WHERE user_id = ?')
+      .bind(userId)
+      .all<string>();
     return result.results
   } catch (error) {
     if (error instanceof Error) throw error
   }
   return [];
-} 
+}
 
 /// Get agent data
 async function getAgentDetails(
@@ -436,11 +473,11 @@ async function getAgentDetails(
   if (!agentExists) throw new Error("Agent does not exist!");
   try {
     const result = await c.env.chat_db
-    .prepare('Select * FROM users WHERE id = ? AND role = ?')
-    .bind(agentId, agentRole)
-    .all()
+      .prepare('Select * FROM users WHERE id = ? AND role = ?')
+      .bind(agentId, agentRole)
+      .all()
 
-    if (!result.results) throw new Error ("An error occured");
+    if (!result.results) throw new Error("An error occured");
     const raw = result.results;
     const parsed = raw[0];
     delete parsed.passwordHash;
@@ -468,11 +505,11 @@ app.post("/api/auth/signup", async (c) => {
   }
 
   if (formData.role !== "agent") {
-    if (formData.role !== "customer") return c.json({ error: "Invalid roles"}, 400);
+    if (formData.role !== "customer") return c.json({ error: "Invalid roles" }, 400);
   }
-  
+
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(formData.email)) return c.json({error: "Invalid email format"}, 400); /// Should never really run this, just included this for tests
+  if (!emailRegex.test(formData.email)) return c.json({ error: "Invalid email format" }, 400); /// Should never really run this, just included this for tests
 
   try {
     console.log("This is the form data sent: ", formData)
@@ -493,11 +530,11 @@ app.post("/api/auth/login", async (c) => {
   }
 
   if (formData.role !== "agent") {
-    if (formData.role !== "customer") return c.json({ error: "Invalid user types"}, 400);
+    if (formData.role !== "customer") return c.json({ error: "Invalid user types" }, 400);
   }
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(formData.email)) return c.json({error: "Invalid email format"}, 400); /// Should never really run this, just included this for tests
+  if (!emailRegex.test(formData.email)) return c.json({ error: "Invalid email format" }, 400); /// Should never really run this, just included this for tests
 
   try {
     const user = await verifyUser(c, formData.email, formData.hashedPassword, formData.role)
@@ -518,26 +555,26 @@ app.post('/api/createChat/:senderId', async (c) => {
 
   const senderIdVerified = await verifyUserId(c, senderId);
   console.log("Sender Id verified: ", senderIdVerified, senderId)
-  if (!senderIdVerified) return c.json({error: "Invalid id"}, 401)
+  if (!senderIdVerified) return c.json({ error: "Invalid id" }, 401)
 
   // @ts-ignore
   const jwtData: { userId: string; userType: string } = c.get<{ userId: string; userType: string }>('user');
   console.log(jwtData)
 
-  if (senderId !== jwtData.userId) return c.json({error: "Unauthorized"}, 403);
-  
-  if (receiverId === null || receiverId === undefined) return c.json({error: "Invalid inputs"}, 400);
+  if (senderId !== jwtData.userId) return c.json({ error: "Unauthorized" }, 403);
 
-  if (receiverId === senderId) return c.json({error: "Can't create a chat between the same Ids"}, 400);
+  if (receiverId === null || receiverId === undefined) return c.json({ error: "Invalid inputs" }, 400);
+
+  if (receiverId === senderId) return c.json({ error: "Can't create a chat between the same Ids" }, 400);
 
   const senderExists = await verifyUserId(c, senderId)
   const receiverExists = await verifyUserId(c, receiverId)
 
-  if (receiverId === null || receiverId === undefined) return c.json({error: "Invalid inputs"}, 400);
+  if (receiverId === null || receiverId === undefined) return c.json({ error: "Invalid inputs" }, 400);
   if (!senderExists || !receiverExists) {
     console.log("If this does run, it means the receiver id isn't verified(rightfully so)")
     return c.json({ error: 'Invalid user ID(s)' }, 401)
-    }
+  }
   console.log("This is the sender id: ", senderId);
   console.log("This is the receiver id: ", receiverId);
   try {
@@ -550,16 +587,15 @@ app.post('/api/createChat/:senderId', async (c) => {
 })
 
 // Get chat data
-app.get('/api/chatData/:threadId', async (c) => {
+app.get('/api/chatData/:threadId/:token', async (c) => {
   console.log("This endpoint gets triggered")
   const threadId = c.req.param('threadId');
-
-  const token = c.req.query('token'); // JWT should come from query or Authorization header
+  const token = c.req.param('token'); // JWT should come from query or Authorization header
   console.log("This is the token recieved: ", token)
   if (!token) return c.json({ error: 'No token provided' }, 401);
 
   // Verify JWT
-  let jwtData: { userId: string; userType: string } | null;
+  let jwtData: { userId: string; userType: string } | null | undefined;
   try {
     jwtData = await verifyJWT(token, c);
     if (!jwtData) return c.json({ error: 'Unauthorized' }, 401);
@@ -686,14 +722,19 @@ app.get('/api/chat/:chatId/ws', async (c) => {
 
 /// Join Queue
 app.post('/api/joinqueue', async (c) => {
-  const formData: {customerId: string; role: 'customer' ; threadId: string } = await c.req.json();
-      // @ts-ignore
+  const formData: { customerId: string; role: 'customer'; threadId: string; assignedAgent: string; name: string } = await c.req.json();
+  if (!formData || !formData.customerId || formData?.role !== 'customer' || !formData.threadId || !formData.assignedAgent) {
+    return c.json({ error: "Invalid user input id" }, 400)
+  }
+  // @ts-ignore
   const jwtData: { userId: string; userType: string } = c.get<{ userId: string; userType: string }>('user');
-  if (jwtData.userId !== formData.customerId || jwtData.userType !== formData.role) return c.json({error: "Forbidden"}, 403);
-  if (!formData.threadId || formData.threadId.length < 5) return c.json({error: "Invalid thread id"}, 400);
+  if (jwtData.userId !== formData.customerId || jwtData.userType !== formData.role) return c.json({ error: "Forbidden" }, 403);
+  if (!verifyUserId(c, formData.assignedAgent)) {
+    return c.json({ error: "Agent does not exist" }, 500)
+  }
   try {
-    const addedUser = await addUserToQueue(c, formData.customerId, formData.role, formData.threadId)
-    if (addedUser?.success) return c.json({message: "You've been successfully added to the queue"}, 201);
+    const addedUser = await addUserToQueue(c, formData.customerId, formData.role, formData.threadId, formData.assignedAgent, formData.name)
+    if (addedUser?.success) return c.json({ message: "You've been successfully added to the queue" }, 201);
     if (!addedUser?.success) throw new Error("Couldn't add you to the queue");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -703,13 +744,13 @@ app.post('/api/joinqueue', async (c) => {
 
 /// leave queue
 app.post('/api/leavequeue', async (c) => {
-  const formData: {customerId: string; role: 'customer' } = await c.req.json();
-      // @ts-ignore
+  const formData: { customerId: string; role: 'customer' } = await c.req.json();
+  // @ts-ignore
   const jwtData: { userId: string; userType: string } = c.get<{ userId: string; userType: string }>('user');
-  if (jwtData.userId !== formData.customerId || jwtData.userType !== formData.role) return c.json({error: "Forbidden"}, 403);
+  if (jwtData.userId !== formData.customerId || jwtData.userType !== formData.role) return c.json({ error: "Forbidden" }, 403);
   try {
     const removedUser = await removeUserFromQueue(c, formData.customerId, formData.role)
-    if (removedUser?.success) return c.json({message: "You've been successfully removed from the queue"}, 201);
+    if (removedUser?.success) return c.json({ message: "You've been successfully removed from the queue" }, 201);
     if (!removedUser?.success) throw new Error("Couldn't remove you from the queue");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -717,15 +758,15 @@ app.post('/api/leavequeue', async (c) => {
   }
 });
 
-/// Leave List -> For agents, 'list' is probably not the best name but I don't what else to use
+/// Join List -> For agents, 'list' is probably not the best name but I don't what else to use
 app.post('/api/joinlist', async (c) => {
-  const formData: {agentId: string; role: 'agent'} = await c.req.json();
-      // @ts-ignore
+  const formData: { agentId: string; role: 'agent' } = await c.req.json();
+  // @ts-ignore
   const jwtData: { userId: string; userType: string } = c.get<{ userId: string; userType: string }>('user');
-  if (jwtData.userId !== formData.agentId || jwtData.userType !== formData.role) return c.json({error: "Forbidden"}, 403);
+  if (jwtData.userId !== formData.agentId || jwtData.userType !== formData.role) return c.json({ error: "Forbidden" }, 403);
   try {
     const addedUser = await addAgentToQueue(c, formData.agentId, formData.role)
-    if (addedUser?.success) return c.json({message: "You've been successfully added to the list"}, 201);
+    if (addedUser?.success) return c.json({ message: "You've been successfully added to the list" }, 201);
     if (!addedUser?.success) throw new Error("Couldn't add you to the list");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -735,13 +776,13 @@ app.post('/api/joinlist', async (c) => {
 
 /// leave list -> For agents
 app.post('/api/leavelist', async (c) => {
-  const formData: {agentId: string; role: 'agent' } = await c.req.json();
-      // @ts-ignore
+  const formData: { agentId: string; role: 'agent' } = await c.req.json();
+  // @ts-ignore
   const jwtData: { userId: string; userType: string } = c.get<{ userId: string; userType: string }>('user');
-  if (jwtData.userId !== formData.agentId || jwtData.userType !== formData.role) return c.json({error: "Forbidden"}, 403);
+  if (jwtData.userId !== formData.agentId || jwtData.userType !== formData.role) return c.json({ error: "Forbidden" }, 403);
   try {
     const removedUser = await removeAgentFromQueue(c, formData.agentId, formData.role)
-    if (removedUser?.success) return c.json({message: "You've been successfully removed from the list"}, 201);
+    if (removedUser?.success) return c.json({ message: "You've been successfully removed from the list" }, 201);
     if (!removedUser?.success) throw new Error("Couldn't remove you from the list");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -753,9 +794,9 @@ app.post('/api/leavelist', async (c) => {
 app.get('/api/freeagentlist', async (c) => {
   try {
     const dbResult = await c.env.chat_db
-    .prepare('SELECT * from free_agents')
-    .bind()
-    .all<{agent_id: string}>();
+      .prepare('SELECT * from free_agents')
+      .bind()
+      .all<{ agent_id: string }>();
 
     if (!dbResult.results) throw new Error('Database query returned no results.');
 
@@ -810,15 +851,15 @@ app.get('/api/history/:userId/:token', async (c) => {
 
   try {
     const result: string[] = await loadHistory(c, userId)
-    return c.json({success: true, data: result}, 200)
+    return c.json({ success: true, data: result }, 200)
   } catch (error) {
-    if (error instanceof Error) return c.json({success: false, details: error.message}, 500)
-    return c.json({success: false, message: "An unknown error occured"}, 500);
+    if (error instanceof Error) return c.json({ success: false, details: error.message }, 500)
+    return c.json({ success: false, message: "An unknown error occured" }, 500);
   }
 })
 
 /// Get agent details endpoint
-app.get('/api/agent/:agentId/:token', async(c) => {
+app.get('/api/agent/:agentId/:token', async (c) => {
   const agentId: string = c.req.param('agentId');
   const token: string = c.req.param('token');
   const userVerified: boolean = await verifyUserId(c, agentId);
@@ -827,16 +868,35 @@ app.get('/api/agent/:agentId/:token', async(c) => {
   console.log("Received Token: ", token)
   const jwtData = await verifyJWT(token, c)
   console.log("This is the jwt data: ", jwtData)
-  if (!jwtData || !jwtData.userId || !jwtData.userType) return c.json({ error: 'Malformed auth token, try logging out and logging in again'}, 403) /// That error message is not very professional, don't forget to update  
+  if (!jwtData || !jwtData.userId || !jwtData.userType) return c.json({ error: 'Malformed auth token, try logging out and logging in again' }, 403) /// That error message is not very professional, don't forget to update  
   try {
     const result = await getAgentDetails(c, agentId, "agent");
-    return c.json({ success: true , agentData: result}, 200);
+    return c.json({ success: true, agentData: result }, 200);
   } catch (error) {
-    if (error instanceof Error) return c.json({ success: false , details: error.message}, 500);
-    return c.json({ success: false, details: 'An unknown error occured'}, 500)
+    if (error instanceof Error) return c.json({ success: false, details: error.message }, 500);
+    return c.json({ success: false, details: 'An unknown error occured' }, 500)
   }
 })
 
+/// Get user queue for a specific agent endpoint -> 'getagentspecificqueue is such a bad name 🤣
+app.get('/api/getagentspecificqueue/:agentId/:token', async (c) => {
+  const agentId: string = c.req.param('agentId');
+  const token: string = c.req.param('token');
+  const userVerified: boolean = await verifyUserId(c, agentId);
+  if (!userVerified) return c.json({ error: 'User does not exist' }, 401);
+  if (!token) return c.json({ error: 'No token provided' }, 401);
+  const jwtData = await verifyJWT(token, c);
+  if (!jwtData || !jwtData.userId || !jwtData.userType) return c.json({ error: 'Malformed auth token, try logging out and logging in again' }, 403) /// That error message is not very professional, don't forget to update 
+  if (agentId !== jwtData.userId) return c.json({ error: 'Forbidded' }, 403);
+  try {
+    const queueData = await getUserQueueForAgent(c, agentId)
+    if (!queueData.success) return c.json({ error: queueData.errorMessage ?? "An unknown error occured" }, 500);
+    return c.json({ success: true, queueData: queueData.data ?? [] })
+  } catch (error) {
+    if (error instanceof Error) return c.json({ error: error.message }, 500);
+    return c.json({ error: 'An unknown error occured' }, 500)
+  }
+})
 
 export { ChatRoom };
 
