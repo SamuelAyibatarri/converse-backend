@@ -95,4 +95,5 @@ npm run dev
 
 <img width="1365" height="701" alt="Screenshot From 2025-10-25 15-00-31" src="https://github.com/user-attachments/assets/91abd9f0-c2b7-40ca-a364-8f019fe8d34a" />
 
-<img width="1366" height="768" alt="Screenshot From 2025-11-16 17-10-00" src="https://github.com/user-attachments/assets/417987fc-06df-4cec-900a-257877c70e7b" />
+<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/f204cb75-e53f-4bb7-bbdb-97692eb352d5" />
+
