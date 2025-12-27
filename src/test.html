@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Tester</title>
+    <style>
+        body { font-family: sans-serif; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px; }
+        div { display: flex; flex-direction: column; gap: 10px; }
+        input, button { padding: 10px; font-size: 16px; }
+        pre { background: #eee; padding: 10px; border-radius: 5px; height: 400px; overflow-y: scroll; white-space: pre-wrap; word-wrap: break-word; }
+        h3 { margin-bottom: 0; }
+    </style>
+</head>
+<body>
+    <div>
+        <h3>1. Connect</h3>
+        <input id="worker-url" type="text" value="ws://localhost:8787" />
+        <input id="chat-id" type="text" placeholder="Enter Chat ID (threadId)" />
+        <input id="token" type="text" placeholder="Enter JWT Token" />
+        <button id="connect-btn">Connect</button>
+    </div>
+
+    <div>
+        <h3>2. Send Message</h3>
+        <input id="sender-id" type="text" placeholder="Your User ID (senderId)" />
+        <input id="receiver-id" type="text" placeholder="Receiver's User ID" />
+        <input id="message-text" type="text" placeholder="Type message..." />
+        <button id="send-btn" disabled>Send</button>
+        <h3>3. Received Messages</h3>
+        <pre id="log"></pre>
+    </div>
+
+    <script>
+        let ws;
+        const logEl = document.getElementById('log');
+        const sendBtn = document.getElementById('send-btn');
+        const connectBtn = document.getElementById('connect-btn');
+        const messageInput = document.getElementById('message-text');
+
+        function log(message) {
+            try {
+                const obj = JSON.parse(message);
+                logEl.textContent += JSON.stringify(obj, null, 2) + '\n\n';
+            } catch (e) {
+                logEl.textContent += message + '\n\n';
+            }
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        connectBtn.onclick = () => {
+            const workerUrl = document.getElementById('worker-url').value;
+            const chatId = document.getElementById('chat-id').value;
+            const token = document.getElementById('token').value;
+
+            if (!chatId || !token) {
+                log('Error: Chat ID and Token are required.');
+                return;
+            }
+
+            // Create a normal WebSocket connection using a short-lived signed URL
+            // We will request the backend to give us a WebSocket URL with proper Authorization
+            fetch(`${workerUrl}/api/chatData/${chatId}/ws-url`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    log(`Error: ${data.error}`);
+                    return;
+                }
+
+                const wsUrl = data.wsUrl; // backend returns the fully authorized WebSocket URL
+                log(`Connecting to ${wsUrl}...`);
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    log('--- Connected! ---');
+                    sendBtn.disabled = false;
+                };
+
+                ws.onmessage = (event) => log('Received: ' + event.data);
+                ws.onclose = () => { log('--- Disconnected. ---'); sendBtn.disabled = true; };
+                ws.onerror = (err) => log('Error: ' + err.message);
+            })
+            .catch(err => log('Fetch error: ' + err.message));
+        };
+
+        sendBtn.onclick = () => {
+            const content = messageInput.value;
+            const senderId = document.getElementById('sender-id').value;
+            const receiverId = document.getElementById('receiver-id').value;
+
+            if (!content || !senderId || !receiverId) {
+                log("Error: Sender, receiver, and content are required.");
+                return;
+            }
+
+            const msg = { content, senderId, receiverId };
+            ws.send(JSON.stringify(msg));
+            log('Sent: ' + JSON.stringify(msg));
+            messageInput.value = '';
+        };
+    </script>
+</body>
+</html>

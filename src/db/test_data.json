@@ -1,0 +1,21 @@
+{
+  "users": {
+    "alice3@test.com": {
+      "token": "eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOiJhbGljZTNAdGVzdC5jb20iLCJyb2xlIjoiY3VzdG9tZXIiLCJpYXQiOjE3NjE1ODYxMTksImV4cCI6MTc2MTU4NjcxOX0.ozMfe7NtWjzeViwbracfofLhdUychrxosEoWNsZmnAA",
+      "loginTime": 1761586119756,
+      "email": "alice3@test.com",
+      "password": "alice123",
+      "usertype": "customer",
+      "id": "67e3f63e-3dde-4201-8d08-e8122a684330"
+    },
+    "bob3@test.com": {
+      "token": "eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOiJib2IzQHRlc3QuY29tIiwicm9sZSI6ImFnZW50IiwiaWF0IjoxNzYxNTg2MTIwLCJleHAiOjE3NjE1ODY3MjB9.Pd1EtnA1PJc4RPJV7to5u22EYno5i12CW2AzagtUH3U",
+      "loginTime": 1761586120254,
+      "email": "bob3@test.com",
+      "password": "bob123",
+      "usertype": "agent",
+      "id": "65c3b797-387a-4606-b039-b609b0679863"
+    }
+  },
+  "threads": {}
+}
