@@ -44,7 +44,7 @@ app.use("/api/*", async (c, next) => {
 
   const isWebSocketUpgrade = path.startsWith('/api/chat/') && path.endsWith('/ws');
 
-  if (path === "/api/auth/signup" || path === "/api/auth/login" || isWebSocketUpgrade || path.startsWith("/api/chatData/") || path.startsWith("/api/history/") || path.startsWith('/api/freeagentlist') || path.startsWith('/api/agent/') || path.startsWith('/api/getagentspecificqueue/')) { /// DON'T FORGET, MAKE /api/chatData a post request not a get, I just did this for testing, ALSO the HISTORY ENDPOINT
+  if (path === "/api/auth/signup" || path === "/api/auth/login" || isWebSocketUpgrade || path.startsWith("/api/chatData/") || path.startsWith("/api/history/") || path.startsWith('/api/freeagentlist') || path.startsWith('/api/agent/') || path.startsWith('/api/getagentspecificqueue/') || path.startsWith('/api/customer/')) { /// DON'T FORGET, MAKE /api/chatData a post request not a get, I just did this for testing, ALSO the HISTORY ENDPOINT
     await next();
     return;
   }
@@ -348,6 +348,7 @@ async function verifyParticipants(c: AppContext, senderId: string, receiverId: s
 
 /// Verify user id
 async function verifyUserId(c: AppContext, userId: string): Promise<boolean> {
+  console.log("This is what the verifyUserId function receives: ", userId);
   const result = await c.env.chat_db
     .prepare('SELECT 1 FROM users WHERE id = ? LIMIT 1')
     .bind(userId)
@@ -465,6 +466,35 @@ async function getAgentDetails(
     delete parsed.passwordHash;
     delete parsed.accountCreationDate;
     delete parsed.lastLogin;
+    return parsed
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    return {};
+  }
+}
+
+async function getCustomerDetails(
+  c: AppContext,
+  customerId: string,
+  role: 'customer',
+): Promise<object> {
+  if (!customerId) throw new Error("Invalid Customer Id");
+  console.log("GCD runs")
+  const customerExists: boolean = await verifyUserId(c, customerId);
+  if (!customerExists) throw new Error("Customer does not exist!");
+  try {
+    const result = await c.env.chat_db
+      .prepare('Select * FROM users WHERE id = ? AND role = ?')
+      .bind(customerId, role)
+      .all()
+
+    if (!result.results) throw new Error("An error occured");
+    const raw = result.results;
+    const parsed = raw[0];
+    delete parsed.passwordHash;
+    delete parsed.accountCreationDate;
+    delete parsed.lastLogin;
+    console.log("Parsed customer data: ", parsed);
     return parsed
   } catch (error) {
     if (error instanceof Error) throw error;
@@ -860,6 +890,29 @@ app.get('/api/agent/:agentId/:token', async (c) => {
   }
 })
 
+/// Get customer details endpoint
+app.get('/api/customer/:customerId/:token', async (c) => {
+  console.log("Does the damn endpoint even work?")
+  const customerId: string = c.req.param('customerId');
+  const token: string = c.req.param('token');
+  console.log("Does it get the user verified point")
+  const userVerified: boolean = await verifyUserId(c, customerId);
+  console.log("Is user verified?: ", userVerified)
+  if (!userVerified) return c.json({ error: 'User does not exist' }, 401);
+  if (!token) return c.json({ error: 'No token provided' }, 401);
+  const jwtData = await verifyJWT(token, c)
+  console.log("JWT data is verified: ", jwtData);
+  if (!jwtData || !jwtData.userId || !jwtData.userType) return c.json({ error: 'Malformed auth token, try logging out and logging in again' }, 403) /// That error message is not very professional, don't forget to update  
+  try {
+    const result = await getCustomerDetails(c, customerId, "customer");
+    return c.json({ success: true, customerData: result }, 200);
+  } catch (error) {
+    if (error instanceof Error) return c.json({ success: false, details: error.message }, 500);
+    return c.json({ success: false, details: 'An unknown error occured' }, 500)
+  }
+})
+
+
 /// Get user queue for a specific agent endpoint -> 'getagentspecificqueue is such a bad name 🤣
 app.get('/api/getagentspecificqueue/:agentId/:token', async (c) => {
   const agentId: string = c.req.param('agentId');
@@ -889,7 +942,7 @@ app.post('/api/verifyJWT', async (c) => {
   if (jwtData.userId !== formData.userId || jwtData.userType !== formData.role)
     return c.json({ success: false, error: 'Forbidden' }, 403);
 
-  return c.json({ success: true}, 200);
+  return c.json({ success: true }, 200);
 });
 
 export { ChatRoom };
