@@ -35,3 +35,9 @@ lerna-debug.log*
 .dev.vars*
 !.dev.vars.example
 !.env.example
+
+# test
+src/test.cjs
+src/test.html
+src/test.ts
+src/test_data_state.json

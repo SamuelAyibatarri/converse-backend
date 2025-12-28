@@ -1,11 +1,9 @@
 import { Hono, Context } from 'hono'
 import { cors } from 'hono/cors'
 import { v4 as uuidv4 } from 'uuid'
-import * as argon2 from "@node-rs/argon2";
 import bcrypt from 'bcryptjs';
 import type * as Interfaces from './Interfaces.ts'
 import { SignJWT, jwtVerify } from "jose";
-import { userInfo } from 'os';
 import { ChatRoom } from './ChatRoom';
 
 type Variables = {
@@ -41,9 +39,7 @@ app.use('/chatData/*', cors({
 }));
 
 app.use("/api/*", async (c, next) => {
-  console.log("This jwt middleware gets triggerd")
   const authHeader = c.req.header("Authorization");
-  console.log("Auth header: ", authHeader)
   const path = c.req.path;
 
   const isWebSocketUpgrade = path.startsWith('/api/chat/') && path.endsWith('/ws');
@@ -75,7 +71,7 @@ app.use("/api/*", async (c, next) => {
 async function generateJWT(userId: string, userType: string, c: AppContext): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(c.env.JWT_SECRET), // convert string → Uint8Array
+    new TextEncoder().encode(c.env.JWT_SECRET),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"]
@@ -107,20 +103,6 @@ async function verifyJWT(
     console.warn("Invalid or expired token:", err);
   }
 }
-
-// Hash password
-// async function hashPassword(password: string): Promise<string> {
-//   return await argon2.hash(password, {
-//     memoryCost: 19456,
-//     timeCost: 2,
-//     parallelism: 1,
-//   });
-// }
-
-// // Verify password
-// async function verifyPassword(password: string, hash: string): Promise<boolean> {
-//   return await argon2.verify(hash, password);
-// }
 
 async function hashPassword(password: string): Promise<string> {
   const saltRounds = 10;
@@ -897,6 +879,18 @@ app.get('/api/getagentspecificqueue/:agentId/:token', async (c) => {
     return c.json({ error: 'An unknown error occured' }, 500)
   }
 })
+
+/// Verify JWT
+app.post('/api/verifyJWT', async (c) => {
+  const formData: { userId: string; role: string } = await c.req.json();
+  // @ts-ignore
+  const jwtData = c.get<{ userId: string; userType: string }>('user');
+  // @ts-ignore
+  if (jwtData.userId !== formData.userId || jwtData.userType !== formData.role)
+    return c.json({ success: false, error: 'Forbidden' }, 403);
+
+  return c.json({ success: true}, 200);
+});
 
 export { ChatRoom };
 
