@@ -7,7 +7,7 @@ declare namespace Cloudflare {
 		durableNamespaces: "ChatRoom";
 	}
 	interface Env {
-		JWT_SECRET: "2f3c37c2f8c6ad814682c6700bf2ace989cb621cb793a39de723a792f821517004f9717bb12a2efccc9d6ea6a2cb8a42c51089dcff3b9b3e0ee98bfc245a8c15";
+		JWT_SECRET: string;
 		CHAT_ROOM: DurableObjectNamespace<import("./src/index").ChatRoom>;
 		chat_db: D1Database;
 	}
