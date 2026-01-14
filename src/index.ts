@@ -97,10 +97,8 @@ async function verifyJWT(
     );
 
     const { payload } = await jwtVerify(token, key);
-    console.log("This is the payload from JWT: ", payload)
     return payload as { userId: string; userType: string };
   } catch (err) {
-    console.warn("Invalid or expired token:", err);
   }
 }
 
@@ -112,8 +110,6 @@ async function hashPassword(password: string): Promise<string> {
 // Verify password
 async function verifyPassword(plaintext_password: string, dbpassword: string): Promise<boolean> {
   // The order is (plaintext_password, hash_from_db)
-  console.log("This is the recieved pass: ", plaintext_password);
-  console.log("This is the hashed password from the database: ", dbpassword)
   return await bcrypt.compare(plaintext_password, dbpassword);
 }
 
@@ -249,13 +245,11 @@ async function getUserQueueForAgent(
   c: AppContext,
   agentId: string
 ): Promise<{ success: boolean; data?: object[]; errorMessage?: string }> {
-  console.log("User verification hasn't ran")
   const user = await c.env.chat_db
     .prepare('SELECT * FROM users WHERE id = ? AND role = ?')
     .bind(agentId, 'agent')
     .first();
 
-  console.log("user verification runs")
   if (!user) return { success: false, errorMessage: "User does not exist" }
 
   try {
@@ -263,7 +257,6 @@ async function getUserQueueForAgent(
       .prepare('SELECT * FROM queue WHERE assigned_agent = ?')
       .bind(agentId)
       .all()
-    console.log("This is the queue data sent: ", queueData.results);
     if (!queueData.success) return { success: false, errorMessage: queueData.error }
     return { success: true, data: queueData.results };
   } catch (error) {
@@ -348,7 +341,6 @@ async function verifyParticipants(c: AppContext, senderId: string, receiverId: s
 
 /// Verify user id
 async function verifyUserId(c: AppContext, userId: string): Promise<boolean> {
-  console.log("This is what the verifyUserId function receives: ", userId);
   const result = await c.env.chat_db
     .prepare('SELECT 1 FROM users WHERE id = ? LIMIT 1')
     .bind(userId)
@@ -386,6 +378,15 @@ async function resolveChat(c: AppContext, threadId: string): Promise<{ success: 
       .bind(threadId)
       .run();
 
+    const user_id = await c.env.chat_db
+      .prepare('SELECT customer_id FROM queue WHERE thread_id = ?')
+      .bind(threadId).all<{ customer_id: string }>();
+
+    const customerId = user_id.results[0]?.customer_id;
+
+    if (customerId) {
+      await removeUserFromQueue(c, customerId, "customer");
+    }
     return { success: true };
   } catch (error) {
     if (error instanceof Error) {
@@ -479,7 +480,6 @@ async function getCustomerDetails(
   role: 'customer',
 ): Promise<object> {
   if (!customerId) throw new Error("Invalid Customer Id");
-  console.log("GCD runs")
   const customerExists: boolean = await verifyUserId(c, customerId);
   if (!customerExists) throw new Error("Customer does not exist!");
   try {
@@ -494,7 +494,6 @@ async function getCustomerDetails(
     delete parsed.passwordHash;
     delete parsed.accountCreationDate;
     delete parsed.lastLogin;
-    console.log("Parsed customer data: ", parsed);
     return parsed
   } catch (error) {
     if (error instanceof Error) throw error;
@@ -524,7 +523,6 @@ app.post("/api/auth/signup", async (c) => {
   if (!emailRegex.test(formData.email)) return c.json({ error: "Invalid email format" }, 400); /// Should never really run this, just included this for tests
 
   try {
-    console.log("This is the form data sent: ", formData)
     const user = await createUser(c, formData);
     const token = await generateJWT(user.id, user.role, c);
     return c.json({ message: `${formData.role} ${formData.name} created successfully`, userData: user, token: token }, 201)
@@ -566,12 +564,10 @@ app.post('/api/createChat/:senderId', async (c) => {
   const senderId = c.req.param('senderId')
 
   const senderIdVerified = await verifyUserId(c, senderId);
-  console.log("Sender Id verified: ", senderIdVerified, senderId)
   if (!senderIdVerified) return c.json({ error: "Invalid id" }, 401)
 
   // @ts-ignore
   const jwtData: { userId: string; userType: string } = c.get<{ userId: string; userType: string }>('user');
-  console.log(jwtData)
 
   if (senderId !== jwtData.userId) return c.json({ error: "Unauthorized" }, 403);
 
@@ -584,11 +580,8 @@ app.post('/api/createChat/:senderId', async (c) => {
 
   if (receiverId === null || receiverId === undefined) return c.json({ error: "Invalid inputs" }, 400);
   if (!senderExists || !receiverExists) {
-    console.log("If this does run, it means the receiver id isn't verified(rightfully so)")
     return c.json({ error: 'Invalid user ID(s)' }, 401)
   }
-  console.log("This is the sender id: ", senderId);
-  console.log("This is the receiver id: ", receiverId);
   try {
     const chatId = await createChat(c, senderId, receiverId)
     return c.json({ message: 'Chat created', chatDataId: chatId }, 201)
@@ -600,10 +593,8 @@ app.post('/api/createChat/:senderId', async (c) => {
 
 // Get chat data
 app.get('/api/chatData/:threadId/:token', async (c) => {
-  console.log("This endpoint gets triggered")
   const threadId = c.req.param('threadId');
-  const token = c.req.param('token'); // JWT should come from query or Authorization header
-  console.log("This is the token recieved: ", token)
+  const token = c.req.param('token'); /// WARNING: JWT should come from query or Authorization header
   if (!token) return c.json({ error: 'No token provided' }, 401);
 
   // Verify JWT
@@ -877,9 +868,7 @@ app.get('/api/agent/:agentId/:token', async (c) => {
   const userVerified: boolean = await verifyUserId(c, agentId);
   if (!userVerified) return c.json({ error: 'User does not exist' }, 401);
   if (!token) return c.json({ error: 'No token provided' }, 401);
-  console.log("Received Token: ", token)
   const jwtData = await verifyJWT(token, c)
-  console.log("This is the jwt data: ", jwtData)
   if (!jwtData || !jwtData.userId || !jwtData.userType) return c.json({ error: 'Malformed auth token, try logging out and logging in again' }, 403) /// That error message is not very professional, don't forget to update  
   try {
     const result = await getAgentDetails(c, agentId, "agent");
@@ -892,16 +881,12 @@ app.get('/api/agent/:agentId/:token', async (c) => {
 
 /// Get customer details endpoint
 app.get('/api/customer/:customerId/:token', async (c) => {
-  console.log("Does the damn endpoint even work?")
   const customerId: string = c.req.param('customerId');
   const token: string = c.req.param('token');
-  console.log("Does it get the user verified point")
   const userVerified: boolean = await verifyUserId(c, customerId);
-  console.log("Is user verified?: ", userVerified)
   if (!userVerified) return c.json({ error: 'User does not exist' }, 401);
   if (!token) return c.json({ error: 'No token provided' }, 401);
   const jwtData = await verifyJWT(token, c)
-  console.log("JWT data is verified: ", jwtData);
   if (!jwtData || !jwtData.userId || !jwtData.userType) return c.json({ error: 'Malformed auth token, try logging out and logging in again' }, 403) /// That error message is not very professional, don't forget to update  
   try {
     const result = await getCustomerDetails(c, customerId, "customer");

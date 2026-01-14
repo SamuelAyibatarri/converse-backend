@@ -114,20 +114,25 @@ export class ChatRoom extends DurableObject<Bindings> {
       try {
         // Parse the incoming message from the client
         // Assume client sends: { content: "hi", senderId: "..." }
-        const clientMsg = JSON.parse(msg.data) as { content: string; senderId: string; receiverId: string };
-        console.log("Client message: ", clientMsg)
+        const clientMsg = JSON.parse(msg.data) as { type?: string, content: string; senderId: string; receiverId: string };
+        if (clientMsg.type === "RESOLVE_CHAT") {
+          console.log("[DEBUG]: Resolve chat trigger received.");
+          this.broadcast(JSON.stringify(clientMsg));
+        } else {
 
-        // Create the full, official message object
-        const message: Interfaces.Chat = {
-          id: crypto.randomUUID(), // Generate a new UUID for the message
-          thread_id: threadId,
-          timestamp: Date.now(),
-          content: clientMsg.content,
-          sender_id: clientMsg.senderId,
-        };
+          // Create the full, official message object
+          const message: Interfaces.Chat = {
+            id: crypto.randomUUID(), // Generate a new UUID for the message
+            thread_id: threadId,
+            timestamp: Date.now(),
+            content: clientMsg.content,
+            sender_id: clientMsg.senderId,
+          };
+          console.log("[DEBUG]: This shouldn't run if I click the resolve chat button")
 
-        // Save this message to D1 and broadcast it to all clients
-        await this.persistAndBroadcast(message, threadId);
+          // Save this message to D1 and broadcast it to all clients
+          await this.persistAndBroadcast(message, threadId);
+        }
 
       } catch (err: any) {
         socket.send(JSON.stringify({ error: 'Failed to parse message', details: err.message }));
